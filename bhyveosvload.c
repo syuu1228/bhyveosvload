@@ -89,7 +89,6 @@ __FBSDID("$FreeBSD$");
 static char *host_base = "/";
 static struct termios term, oldterm;
 int disk_fd = -1;
-//static int disk_fd = -1;
 
 static char *vmname, *progname;
 struct vmctx *ctx;
@@ -98,7 +97,7 @@ static uint64_t gdtbase, cr3, rsp;
 
 static void cb_exit(void *arg, int v);
 
-extern int osv_load(struct loader_callbacks *cb, uint64_t mem_size, char *loader_elf);
+extern int osv_load(struct loader_callbacks *cb, uint64_t mem_size);
 
 /*
  * Console i/o callbacks
@@ -541,7 +540,7 @@ usage(void)
 {
 
 	fprintf(stderr,
-		"usage: %s [-m mem-size][-e loader_elf][-d disk-path] [-h <host-path>] "
+		"usage: %s [-m mem-size][-d disk-path] [-h <host-path>] "
 		"<vmname>\n", progname);
 	exit(1);
 }
@@ -551,14 +550,12 @@ main(int argc, char** argv)
 {
 	uint64_t mem_size;
 	int opt, error;
-	char *loader_elf;
-	char *disk_image;
+	char *disk_image = NULL;
 
 	progname = argv[0];
 
 	mem_size = 256 * MB;
-	loader_elf = "loader.elf";
-	disk_image = "usr.img";
+	disk_image = "osv.img";
 
 	while ((opt = getopt(argc, argv, "d:h:m:e:")) != -1) {
 		switch (opt) {
@@ -574,9 +571,6 @@ main(int argc, char** argv)
 			error = vm_parse_memsize(optarg, &mem_size);
 			if (error != 0)
 				errx(EX_USAGE, "Invalid memsize '%s'", optarg);
-			break;
-		case 'e':
-			loader_elf = optarg;
 			break;
 		case '?':
 			usage();
@@ -618,6 +612,6 @@ main(int argc, char** argv)
 	if (disk_image) {
 		disk_fd = open(disk_image, O_RDONLY);
 	}
-	if (osv_load(&cb, mem_size, loader_elf))
+	if (osv_load(&cb, mem_size))
 		exit(1);
 }

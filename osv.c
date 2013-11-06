@@ -69,9 +69,9 @@ __FBSDID("$FreeBSD: user/syuu/bhyve_standalone_guest/usr.sbin/bhyveload/bhyveloa
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <gelf.h>
 #include <vmmapi.h>
 
+#include "elfparse.h"
 #include "userboot.h"
 
 #define	BSP	0
@@ -81,6 +81,11 @@ __FBSDID("$FreeBSD: user/syuu/bhyve_standalone_guest/usr.sbin/bhyveload/bhyveloa
 #define ADDR_TARGET 0x200000
 #define ADDR_MB_INFO 0x1000
 #define ADDR_E820DATA 0x1100
+#define ADDR_STACK 0x1200
+#define ADDR_PT4 0x2000
+#define ADDR_PT3 0x3000
+#define ADDR_PT2 0x4000
+#define ADDR_GDTR 0x5000
 
 struct multiboot_info_type {
     uint32_t flags;
@@ -129,110 +134,48 @@ typedef u_int64_t p4_entry_t;
 typedef u_int64_t p3_entry_t;
 typedef u_int64_t p2_entry_t;
 
-#define	GUEST_NULL_SEL		0
-#define	GUEST_CODE_SEL		1
-#define	GUEST_DATA_SEL		2
-#define	GUEST_GDTR_LIMIT	(3 * 8 - 1)
+#define	GUEST_GDTR_LIMIT	(4 * 8 - 1)
 
-int osv_load(struct loader_callbacks *cb, uint64_t mem_size, char *loader_elf);
+int osv_load(struct loader_callbacks *cb, uint64_t mem_size);
 
 static void
-setup_stand_gdt(uint64_t *gdtr)
+setup_osv_gdt(uint64_t *gdtr)
 {
-	gdtr[GUEST_NULL_SEL] = 0;
-	gdtr[GUEST_CODE_SEL] = 0x0020980000000000;
-	gdtr[GUEST_DATA_SEL] = 0x0000900000000000;
+	gdtr[0] = 0x0;
+	gdtr[1] = 0x00af9b000000ffff; 
+	gdtr[2] = 0x00cf93000000ffff;
+	gdtr[3] = 0x00cf9b000000ffff;
 }
 
 extern struct vmctx *ctx;
 extern int disk_fd;
 
-static ssize_t 
-resolv_section_index(Elf *e, char *sec_name)
-{
-	size_t shstrndx;
-	Elf_Scn *scn;
-	int i;
-
-	if (!elf_getshstrndx(e, &shstrndx)) {
-		fprintf(stderr, "elf_getshstrndx:%s\n", elf_errmsg(-1));
-		return (-1);
-	}
-	for (i = 0; (scn = elf_getscn(e, i)); i++) {
-		GElf_Shdr shdr;
-		char *name;
-
-		if (gelf_getshdr(scn, &shdr) != &shdr)
-			return (-1);
-		if (!(name = elf_strptr(e, shstrndx, shdr.sh_name))) {
-			fprintf(stderr, "elf_strptr:%s\n", elf_errmsg(-1));
-			return (-1);
-		}
-		if (!strcmp(sec_name, name))
-			return (i);
-	}
-	return (-1);
-}
-
-static uint64_t
-resolv_symbol_addr(Elf *e, char *sym_name)
-{
-	int i;
-	ssize_t scndx_sym, scndx_str;
-	Elf_Scn *scn;
-	Elf_Data *data;
-	GElf_Sym sym;
-
-	if ((scndx_sym = resolv_section_index(e, ".symtab")) < 0) {
-		fprintf(stderr, "symtab not found\n");
-		return (NULL);
-	}
-	if ((scndx_str = resolv_section_index(e, ".strtab")) < 0) {
-		fprintf(stderr, "symtab not found\n");
-		return (NULL);
-	}
-	if (!(scn = elf_getscn(e, scndx_sym))) {
-		fprintf(stderr, "elf_getscn:%s\n", elf_errmsg(-1));
-		return (NULL);
-	}
-	if (!(data = elf_getdata(scn, 0))) {
-		fprintf(stderr, "elf_getscn:%s\n", elf_errmsg(-1));
-		return (NULL);
-	}
-	
-	for (i = 0; gelf_getsym(data, i, &sym) == &sym; i++) {
-		char *name;
-
-		if (!(name = elf_strptr(e, scndx_str, sym.st_name))) {
-			fprintf(stderr, "elf_strptr:%s\n", elf_errmsg(-1));
-			return (NULL);
-		}
-		if (!strcmp(sym_name, name))
-			return (sym.st_value);
-	}
-	return (NULL);
-}
-
 int
-osv_load(struct loader_callbacks *cb, uint64_t mem_size, char *loader_elf)
+osv_load(struct loader_callbacks *cb, uint64_t mem_size)
 {
+	int i;
 	struct multiboot_info_type mb_info;
 	struct e820ent e820data[3];
 	char cmdline[0x3f * 512];
 	void *target;
 	size_t resid;
-	int elf_fd;
-	Elf *e;
-	uint64_t start64, init_stack_top, ident_pt_l4, gdt_desc;
+	struct elfparse ep;
+	uint64_t start64;
 	int error;
 	uint64_t desc_base;
 	uint32_t desc_access, desc_limit;
 	uint16_t gsel;
+	ssize_t siz;
+	p4_entry_t PT4[512];
+	p3_entry_t PT3[512];
+	p2_entry_t PT2[512];
+	uint64_t gdtr[3];
 
 	bzero(&mb_info, sizeof(mb_info));
 	mb_info.cmdline = ADDR_CMDLINE;
 	mb_info.mmap_addr = ADDR_E820DATA;
 	mb_info.mmap_length = sizeof(e820data);
+	printf("sizeof e820data=%lx\n", sizeof(e820data));
 	if (cb->copyin(NULL, &mb_info, ADDR_MB_INFO, sizeof(mb_info))) {
 		perror("copyin");
 		return (1);
@@ -270,39 +213,24 @@ osv_load(struct loader_callbacks *cb, uint64_t mem_size, char *loader_elf)
 		perror("calloc");
 		return (1);
 	}
-#if 0
+#if 0 /* XXX: Why this doesn't work? */
 	if (cb->diskread(NULL, 0, 0x40 * 512 * 4096, target, 128 * 512, &resid)) {
 		perror("diskread");
 		return (1);
 	}
 #endif
-	ssize_t siz = pread(disk_fd, target, 0x40 * 512 * 4096, 128 * 512);
+	siz = pread(disk_fd, target, 0x40 * 512 * 4096, 128 * 512);
 	if (siz < 0)
 		perror("pread");
 	if (cb->copyin(NULL, target, ADDR_TARGET, 0x40 * 512 * 4096)) {
 		perror("copyin");
 		return (1);
 	}
-	if ((elf_fd = open(loader_elf, O_RDONLY, 0)) < 0) {
-		perror ("open");
+	if (elfparse_open_memory(target, 0x40 * 512 * 4096, &ep)) {
 		return (1);
 	}
-   	if (elf_version(EV_CURRENT) == EV_NONE) {
-		fprintf(stderr, "elf_version:%s\n", elf_errmsg(-1));
-		return (1);
-	}
-	if (!(e = elf_begin(elf_fd, ELF_C_READ, NULL))) {
-		fprintf(stderr, "elf_begin:%s\n", elf_errmsg(-1));
-		return (1);
-	}
-	start64 = resolv_symbol_addr(e, "start64");
-	init_stack_top = resolv_symbol_addr(e, "init_stack_top");
-	ident_pt_l4 = resolv_symbol_addr(e, "ident_pt_l4");
-	gdt_desc = resolv_symbol_addr(e, "gdt_desc");
+	start64 = elfparse_resolve_symbol(&ep, "start64");
 	printf("start64:0x%lx\n", start64);
-	printf("init_stack_top:0x%lx\n", init_stack_top);
-	printf("ident_pt_l4:0x%lx\n", ident_pt_l4);
-	printf("gdt_desc:0x%lx\n", gdt_desc);
 
 	desc_base = 0;
 	desc_limit = 0;
@@ -381,15 +309,44 @@ osv_load(struct loader_callbacks *cb, uint64_t mem_size, char *loader_elf)
 		goto done;
 
 
+	bzero(PT4, PAGE_SIZE);
+	bzero(PT3, PAGE_SIZE);
+	bzero(PT2, PAGE_SIZE);
+
+	/*
+	 * This is kinda brutal, but every single 1GB VM memory segment
+	 * points to the same first 1GB of physical memory.  But it is
+	 * more than adequate.
+	 */
+	for (i = 0; i < 512; i++) {
+		/* Each slot of the level 4 pages points to the same level 3 page */
+		PT4[i] = (p4_entry_t) ADDR_PT3;
+		PT4[i] |= PG_V | PG_RW | PG_U;
+
+		/* Each slot of the level 3 pages points to the same level 2 page */
+		PT3[i] = (p3_entry_t) ADDR_PT2;
+		PT3[i] |= PG_V | PG_RW | PG_U;
+
+		/* The level 2 page slots are mapped with 2MB pages for 1GB. */
+		PT2[i] = i * (2 * 1024 * 1024);
+		PT2[i] |= PG_V | PG_RW | PG_PS | PG_U;
+	}
+
+	cb->copyin(NULL, PT4, ADDR_PT4, sizeof(PT4));
+	cb->copyin(NULL, PT3, ADDR_PT3, sizeof(PT3));
+	cb->copyin(NULL, PT2, ADDR_PT2, sizeof(PT2));
+
 	cb->setreg(NULL, VM_REG_GUEST_RFLAGS, 0x2);
 	cb->setreg(NULL, VM_REG_GUEST_RBP, ADDR_TARGET);
-	cb->setreg(NULL, VM_REG_GUEST_RSP, init_stack_top);
+	cb->setreg(NULL, VM_REG_GUEST_RSP, ADDR_STACK);
 	cb->setmsr(NULL, MSR_EFER, 0x00000d00);
 	cb->setcr(NULL, 4, 0x000007b8);
-	cb->setcr(NULL, 3, ident_pt_l4);
+	cb->setcr(NULL, 3, ADDR_PT4);
 	cb->setcr(NULL, 0, 0x80010001);
 
-        cb->setgdt(NULL, gdt_desc, sizeof(uint64_t) * 3);
+	setup_osv_gdt(gdtr);
+	cb->copyin(NULL, gdtr, ADDR_GDTR, sizeof(gdtr));
+        cb->setgdt(NULL, ADDR_GDTR, sizeof(gdtr));
 	cb->setreg(NULL, VM_REG_GUEST_RIP, start64);
 	return (0);
 done:

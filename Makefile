@@ -2,7 +2,7 @@
 
 DESTDIR=/usr/local/sbin
 PROG=	bhyveosvload
-SRCS=	bhyveosvload.c osv.c
+SRCS=	bhyveosvload.c osv.c elfparse.c
 MAN=
 
 DPADD+=	${LIBVMMAPI} ${LIBUTIL}
