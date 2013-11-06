@@ -1,3 +1,31 @@
+/*-
+ * Copyright (c) 2007-2009 Kai Wang
+ * Copyright (c) 2003 David O'Brien.  All rights reserved.
+ * Copyright (c) 2001 Jake Burkholder
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #include <sys/queue.h>
 
 #include <stdio.h>
@@ -7,6 +35,7 @@
 #include <assert.h>
 #include <err.h>
 #include "elfparse.h"
+
 
 /*
  * Lookup a name in the '-N' name list.
@@ -122,9 +151,6 @@ unload_sections(struct elfparse *ed)
 	}
 }
 
-/*
- * Dump the symbol table section.
- */
 static void
 elf_find_symbol_symtab(struct elfparse *ed, int i, char *name, GElf_Sym *sym)
 {
@@ -157,9 +183,6 @@ elf_find_symbol_symtab(struct elfparse *ed, int i, char *name, GElf_Sym *sym)
 }
 
 
-/*
- * Dump the symbol tables. (.dynsym and .symtab)
- */
 static void
 elf_find_symbol(struct elfparse *ed, char *name, GElf_Sym *sym)
 {
@@ -173,9 +196,6 @@ elf_find_symbol(struct elfparse *ed, char *name, GElf_Sym *sym)
 }
 
 
-/*
- * Dump an object. (ELF object or ar(1) archive)
- */
 uintmax_t
 elfparse_resolve_symbol(struct elfparse *ed, char *name)
 {
@@ -188,7 +208,8 @@ elfparse_resolve_symbol(struct elfparse *ed, char *name)
 	return sym.st_value;
 }
 
-int elfparse_open(int fd, struct elfparse *ed)
+int 
+elfparse_open(int fd, struct elfparse *ed)
 {
 	memset(ed, 0, sizeof(*ed));
 	STAILQ_INIT(&ed->snl);
@@ -217,7 +238,8 @@ int elfparse_open(int fd, struct elfparse *ed)
 	return 0;
 }
 
-int elfparse_open_memory(char *image, size_t size, struct elfparse *ed)
+int 
+elfparse_open_memory(char *image, size_t size, struct elfparse *ed)
 {
 	memset(ed, 0, sizeof(*ed));
 	STAILQ_INIT(&ed->snl);
@@ -245,7 +267,9 @@ int elfparse_open_memory(char *image, size_t size, struct elfparse *ed)
 
 	return 0;
 }
-int elfparse_close(struct elfparse *ed)
+
+int 
+elfparse_close(struct elfparse *ed)
 {
 	elf_end(ed->elf);
 	return 0;
