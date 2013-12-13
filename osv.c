@@ -153,23 +153,27 @@ extern int disk_fd;
 int
 osv_load(struct loader_callbacks *cb, uint64_t mem_size)
 {
+#if 0
 	int i;
+#endif
 	struct multiboot_info_type mb_info;
 	struct e820ent e820data[3];
 	char cmdline[0x3f * 512];
 	void *target;
 	size_t resid;
 	struct elfparse ep;
-	uint64_t start64;
+	uint64_t start64, ident_pt_l4, gdt_desc;
 	int error;
 	uint64_t desc_base;
 	uint32_t desc_access, desc_limit;
 	uint16_t gsel;
 	ssize_t siz;
+#if 0
 	p4_entry_t PT4[512];
 	p3_entry_t PT3[512];
 	p2_entry_t PT2[512];
 	uint64_t gdtr[3];
+#endif
 
 	bzero(&mb_info, sizeof(mb_info));
 	mb_info.cmdline = ADDR_CMDLINE;
@@ -230,7 +234,11 @@ osv_load(struct loader_callbacks *cb, uint64_t mem_size)
 		return (1);
 	}
 	start64 = elfparse_resolve_symbol(&ep, "start64");
+	ident_pt_l4 = elfparse_resolve_symbol(&ep, "ident_pt_l4");
+	gdt_desc = elfparse_resolve_symbol(&ep, "gdt_desc");
 	printf("start64:0x%lx\n", start64);
+	printf("ident_pt_l4:0x%lx\n", ident_pt_l4);
+	printf("gdt_desc:0x%lx\n", gdt_desc);
 
 	desc_base = 0;
 	desc_limit = 0;
@@ -308,7 +316,7 @@ osv_load(struct loader_callbacks *cb, uint64_t mem_size)
 	if ((error = vm_set_register(ctx, BSP, VM_REG_GUEST_LDTR, 0)) != 0)
 		goto done;
 
-
+#if 0
 	bzero(PT4, PAGE_SIZE);
 	bzero(PT3, PAGE_SIZE);
 	bzero(PT2, PAGE_SIZE);
@@ -335,18 +343,25 @@ osv_load(struct loader_callbacks *cb, uint64_t mem_size)
 	cb->copyin(NULL, PT4, ADDR_PT4, sizeof(PT4));
 	cb->copyin(NULL, PT3, ADDR_PT3, sizeof(PT3));
 	cb->copyin(NULL, PT2, ADDR_PT2, sizeof(PT2));
+#endif
 
 	cb->setreg(NULL, VM_REG_GUEST_RFLAGS, 0x2);
 	cb->setreg(NULL, VM_REG_GUEST_RBP, ADDR_TARGET);
 	cb->setreg(NULL, VM_REG_GUEST_RSP, ADDR_STACK);
 	cb->setmsr(NULL, MSR_EFER, 0x00000d00);
 	cb->setcr(NULL, 4, 0x000007b8);
+#if 0
 	cb->setcr(NULL, 3, ADDR_PT4);
+#endif
+	cb->setcr(NULL, 3, ident_pt_l4);
 	cb->setcr(NULL, 0, 0x80010001);
 
+#if 0
 	setup_osv_gdt(gdtr);
 	cb->copyin(NULL, gdtr, ADDR_GDTR, sizeof(gdtr));
         cb->setgdt(NULL, ADDR_GDTR, sizeof(gdtr));
+#endif
+        cb->setgdt(NULL, gdt_desc, sizeof(uint64_t) * 4);
 	cb->setreg(NULL, VM_REG_GUEST_RIP, start64);
 	return (0);
 done:

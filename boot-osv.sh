@@ -25,7 +25,7 @@ echo "Loading the guest kernel with /usr/sbin/bhyveload"
 
 echo "Booting the guest kernel with /usr/sbin/bhyve"
 echo "FreeBSD 8.* guests may exhibit a few second delay"
-/usr/sbin/bhyve -c 1 -m 1024 -AI -H -P -g 0 -e \
+/usr/sbin/bhyve -c 1 -m 1024 -AI -H -P -g 0  \
 -s 0:0,hostbridge \
 -s 1:0,virtio-net,tap0 \
 -s 2:0,virtio-blk,$1 \
