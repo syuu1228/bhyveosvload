@@ -2,6 +2,7 @@
 #define _ELFPARSE_H_
 #include <gelf.h>
 #include <inttypes.h>
+#include <sys/queue.h>
 
 /* Internal data structure for sections. */
 struct section {
